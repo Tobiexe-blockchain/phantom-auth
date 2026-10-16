@@ -20,6 +20,7 @@ const schema = z.object({
   IP_FAILED_LOGIN_MAX: z.coerce.number().int().positive().default(10),
   WHITELIST_DELAY_HOURS: z.coerce.number().positive().default(24),
   WHITELIST_MAX_ENTRIES: z.coerce.number().int().positive().default(25),
+  SERVICE_API_KEY: z.string().min(24, 'SERVICE_API_KEY must be at least 24 characters').optional(),
 });
 
 export interface Config {
@@ -42,6 +43,8 @@ export interface Config {
   ipFailedLoginMax: number;
   whitelistDelayHours: number;
   whitelistMaxEntries: number;
+  /** Key other backend services send to use /internal routes. Those routes are off when it is not set. */
+  serviceApiKey?: string;
 }
 
 export function loadConfig(env: Record<string, string | undefined> = process.env): Config {
@@ -66,5 +69,6 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     ipFailedLoginMax: e.IP_FAILED_LOGIN_MAX,
     whitelistDelayHours: e.WHITELIST_DELAY_HOURS,
     whitelistMaxEntries: e.WHITELIST_MAX_ENTRIES,
+    serviceApiKey: e.SERVICE_API_KEY,
   };
 }

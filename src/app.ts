@@ -1,5 +1,6 @@
 import cors from '@fastify/cors';
 import helmet from '@fastify/helmet';
+import { createHash, timingSafeEqual } from 'node:crypto';
 import Fastify, { type FastifyInstance, type FastifyRequest } from 'fastify';
 import type { Pool } from 'pg';
 import { z, ZodError } from 'zod';
@@ -39,6 +40,7 @@ const schemas = {
   whitelistConfirm: z.object({ token: z.string().min(20).max(200) }).strict(),
   idParam: z.object({ id: z.string().uuid() }),
   allowedQuery: z.object({ network: z.enum(['ethereum', 'bitcoin']), address: z.string().min(10).max(100) }),
+  internalAllowed: z.object({ userId: z.string().uuid(), network: z.enum(['ethereum', 'bitcoin']), address: z.string().min(10).max(100) }),
   auditQuery: z.object({ limit: z.coerce.number().int().min(1).max(200).default(50) }),
 };
 
@@ -89,9 +91,20 @@ export function buildApp({ pool, config, mailer }: AppDeps): FastifyInstance {
   });
   app.setNotFoundHandler((_req, reply) => reply.status(404).send({ error: { code: 'NOT_FOUND', message: 'Route not found.' } }));
 
+  // Internal routes are guarded by the service key instead, and only wrong keys use up the IP budget.
   app.addHook('onRequest', async (req) => {
-    if (req.url !== '/health') await limiters.assertWithinRequestLimit(req.ip);
+    if (req.url !== '/health' && !req.url.startsWith('/internal/')) await limiters.assertWithinRequestLimit(req.ip);
   });
+
+  const digest = (v: string) => createHash('sha256').update(v).digest();
+  async function requireServiceKey(req: FastifyRequest): Promise<void> {
+    if (!config.serviceApiKey) throw new AppError(404, 'NOT_FOUND', 'Route not found.');
+    const given = req.headers['x-service-key'];
+    if (typeof given !== 'string' || !timingSafeEqual(digest(given), digest(config.serviceApiKey))) {
+      await limiters.assertWithinRequestLimit(req.ip);
+      throw new AppError(401, 'UNAUTHORIZED', 'A valid x-service-key header is required.');
+    }
+  }
 
   async function authenticate(req: FastifyRequest): Promise<void> {
     const header = req.headers.authorization;
@@ -191,6 +204,14 @@ export function buildApp({ pool, config, mailer }: AppDeps): FastifyInstance {
   app.get('/whitelist/allowed', authed, async (req) => {
     const q = schemas.allowedQuery.parse(req.query);
     return { allowed: await whitelist.isAllowed(req.userId!, q.network, q.address) };
+  });
+
+  // ---------- service to service ----------
+  // The wallet service asks this before sending a withdrawal. Called with a service key, not a user token.
+  app.get('/internal/whitelist/allowed', async (req) => {
+    await requireServiceKey(req);
+    const q = schemas.internalAllowed.parse(req.query);
+    return { allowed: await whitelist.isAllowed(q.userId, q.network, q.address) };
   });
 
   // ---------- audit ----------

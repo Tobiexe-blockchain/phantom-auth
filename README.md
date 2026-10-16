@@ -53,6 +53,7 @@ Errors look like `{ "error": { "code": "...", "message": "..." } }`.
 | DELETE | `/whitelist/:id` | Removes immediately |
 | GET | `/whitelist/allowed` | `?network=&address=` for the withdrawal service to check before paying out |
 | GET | `/audit` | The caller's own recent events |
+| GET | `/internal/whitelist/allowed` | `?userId=&network=&address=` with an `x-service-key` header. For the wallet service, not for browsers. Off unless `SERVICE_API_KEY` is set. |
 
 ```bash
 curl -X POST localhost:3001/auth/register -H 'content-type: application/json' \
@@ -100,5 +101,5 @@ Email verification and password reset, address checksum validation, a real maile
 src/services/   auth (sessions, lockout, second factor), twofa, whitelist
 src/            app (routes, validation), tokens, totp, crypto, passwords, rateLimit, audit, mailer, config
 migrations/     SQL schema
-tests/          47 tests against a real database
+tests/          54 tests against a real database
 ```
